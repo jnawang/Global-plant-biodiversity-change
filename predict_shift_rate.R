@@ -69,21 +69,21 @@ data_lat$disp    <- as.factor(data_lat$disp)
 
 # train the model first: train a species_model [use species identity] and a trait_model [use dispersal syndrome].
 # species_level model first;
-mod_lat_species = lmer(g_ShiftR ~ g_Height + g_BaseT2 + g_Mount + g_varT + g_LatveloT * g_BaseT + g_LatveloT * g_HFI + (1|AreaF) + (1|Species), data_lat, REML=TRUE, na.action="na.fail", control = lmerControl(optimizer ='optimx', optCtrl=list(method='nlminb')))
+mod_lat_species = lmer(g_ShiftR ~ g_BaseT2 + g_varT + g_LatveloT * g_BaseT + g_LatveloT * g_HFI + (1|Species), data_lat, REML=TRUE, na.action="na.fail", control = lmerControl(optimizer ='optimx', optCtrl=list(method='nlminb')))
 summary(mod_lat_species)
 # How to know significance of each variable? check functions in the package
 confint(mod_lat_species, method = "Wald", level = 0.95)   # c("profile", "Wald", "boot")
 # Check effect size of each random variable, including random effects.
-r.squaredGLMM(mod_lat_species)    # R2m: 0.07437664; R2c: 0.2023812
+r.squaredGLMM(mod_lat_species)    # R2m: 0.056; R2c: 0.51
 #######
 #######
 # trait_level model next;
-mod_lat_trait = lmer(g_ShiftR ~ g_BaseT2 + g_Mount + g_varT + g_LatveloT * g_BaseT + g_LatveloT * g_HFI + (1|AreaF) + (1|disp), data_lat, REML=TRUE, na.action="na.fail", control = lmerControl(optimizer ='optimx', optCtrl=list(method='nlminb')))
+mod_lat_trait = lmer(g_ShiftR ~ g_varT + g_LatveloT * g_BaseT + g_LatveloT * g_HFI + (1|disp), data_lat, REML=TRUE, na.action="na.fail", control = lmerControl(optimizer ='optimx', optCtrl=list(method='nlminb')))
 summary(mod_lat_trait)
 # How to know significance of each variable? check functions in the package
 confint(mod_lat_trait, method = "Wald", level = 0.95)   # c("profile", "Wald", "boot")
 # Check effect size of each random variable, including random effects.
-r.squaredGLMM(mod_lat_trait)    # R2m: 0.0732952; R2c: 0.1508451
+r.squaredGLMM(mod_lat_trait)    # R2m: 0.056; R2c: 0.47
 ###################################################################Fit elev models#########################################################
 ###########################################################################################################################################
 # obtain the elevation shift model next
