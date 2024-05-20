@@ -1,0 +1,782 @@
+---
+title: "Get data from BIEN"
+author: "Brunno Oliveira"
+date: as.character(Sys.Date())
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Setup
+```{r message=F,warning=FALSE, results='hide'}
+
+rm(list=ls())
+gc()
+
+list.of.packages <- c("BIEN",
+                      "TNRS",
+                      "data.table", # for loading large tables
+                      "dplyr", # data organization
+                      "ape", #Package for working with phylogenies in R
+                      "maps","rgdal","raster","leaflet", # Useful for making quick maps of occurrences
+                      "sp", "mapview","plainview","sf","fasterize", # More mapping
+                      "foreach", "pbapply", "doParallel") # parallel processing
+
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+
+if(length(new.packages)) install.packages(new.packages)
+
+sapply(list.of.packages, require, character.only = TRUE)
+
+```
+
+# Download BIEN traits
+Dowloaded 11/08/2021
+
+We downloaded data for the 16 traits from BIEN. These are among the traits with highest completeness.
+* leaf area (LA)
+* leaf area per leaf dry mass (SLA)
+* leaf carbon content per leaf dry mass (C)
+* leaf dry mass (LDM)
+* leaf fresh mass (LFM)
+* leaf nitrogen content per leaf dry mass (N)
+* leaf phosphorus content per leaf dry mass (P)
+* leaf photosynthetic rate per leaf area (LPhoto)
+* leaf stomatal conductance per leaf area (LStom)
+* leaf thickness (Thick)
+* longest whole plant longevity / maximum whole plant longevity (Lon)
+* whole plant height / maximum whole plant height (Height)
+* root dry mass (RootMass)
+* seed mass (SeedMass)
+* stem dry mass (StemMass)
+* stem wood density (WoodDens)
+
+Also downloaded this extra trait for use in analyses of dispersion distance
+* Plant growth form
+
+```{r traits, eval=FALSE, message=FALSE, warning=FALSE}
+# traits_available <- BIEN_trait_list()
+# 
+# # Download all measurements of the trait(s) specified
+# traits2download <- c(LA = "leaf area",
+#                      SLA = "leaf area per leaf dry mass",
+#                      LeafCarb = "leaf carbon content per leaf dry mass",
+#                      LeafDryMass = "leaf dry mass",
+#                      Tickness = "leaf thickness",
+#                      LeafFreshMass = "leaf fresh mass",
+#                      N = "leaf nitrogen content per leaf dry mass",
+#                      P = "leaf phosphorus content per leaf dry mass",
+#                      LeafPhotoRateArea = "leaf photosynthetic rate per leaf area",
+#                      LeafStomatCondArea = "leaf stomatal conductance per leaf area",
+#                      Long = "longest whole plant longevity",
+#                      LongMax = "maximum whole plant longevity",
+#                      HeightMax = "maximum whole plant height",
+#                      RootDryMass = "root dry mass",
+#                      Height = "whole plant height",
+#                      SeedMass = "seed mass",
+#                      SDM = "stem dry mass",
+#                      WoodDens = "stem wood density")
+# 
+# # To calc
+# # Leaf nitrogen/phosphorus (N/P) ratio
+# # Leaf area per leaf fresh mass (SLA based on leaf fresh mass)
+# 
+# BIEN_traits <- pblapply(traits2download, function(x) BIEN_trait_trait(trait = x))
+# # Filter important columns
+# BIEN_traits <- lapply(BIEN_traits, function(x) x[,1:3])
+# 
+# # Fix height and longevity
+# ## 1) height
+# Height <- rbind(BIEN_traits$Height, BIEN_traits$HeightMax)
+# Height <- Height %>%
+#   group_by(scrubbed_species_binomial) %>%
+#   summarise(trait_value = max(as.numeric(trait_value), na.rm = T))
+# Height$trait_name = "maximum whole plant height"
+# BIEN_traits$Height <- Height
+# BIEN_traits <- BIEN_traits[-which(names(BIEN_traits) == "HeightMax")]
+# 
+# ## 2) longevity
+# Long <- rbind(BIEN_traits$Long, BIEN_traits$LongMax)
+# Long <- Long %>%
+#   group_by(scrubbed_species_binomial) %>%
+#   summarise(trait_value = max(as.numeric(trait_value), na.rm = T))
+# Long$trait_name = "longest whole plant longevity"
+# BIEN_traits$Long <- Long
+# BIEN_traits <- BIEN_traits[-which(names(BIEN_traits) == "LongMax")]
+# 
+# # save continuous traits
+# BIEN_traits_cont <- do.call(rbind, BIEN_traits)
+# 
+# saveRDS(BIEN_traits_cont, "Data/BIEN_traits_cont.RDS")
+
+# #############################
+# 
+# # Download categorical traits
+# 
+# # PS.: I did not download "whole plant dispersal syndrome" because they classify this trait as eigther "abiotic" or "biotic". TRY database has a much better/detailed classification
+# 
+# # The other important traits is then "whole plant growth form"
+# 
+# GF <- BIEN_trait_trait(trait = "whole plant growth form")[,1:3]
+# unique(GF$trait_value)
+# 
+# saveRDS(GF, "Data/BIEN_traits_growthform.RDS")
+
+# Continuous traits
+BIEN_traits_cont <- readRDS("Data/BIEN_traits_cont.RDS")
+colnames(BIEN_traits_cont) <- c("sps", "trait", "value")
+# trait value as numeric
+BIEN_traits_cont$value <- as.numeric(BIEN_traits_cont$value)
+# omit NAs
+BIEN_traits_cont <- na.omit(BIEN_traits_cont)
+
+# Fix trait names
+BIEN_traits_cont$trait[which(BIEN_traits_cont$trait=="leaf area")] <- "LA"
+BIEN_traits_cont$trait[which(BIEN_traits_cont$trait=="leaf area per leaf dry mass")] <- "SLA"
+BIEN_traits_cont$trait[which(BIEN_traits_cont$trait=="leaf carbon content per leaf dry mass")] <- "C"
+BIEN_traits_cont$trait[which(BIEN_traits_cont$trait=="leaf dry mass")] <- "LDM"
+BIEN_traits_cont$trait[which(BIEN_traits_cont$trait=="leaf fresh mass")] <- "LFM"
+BIEN_traits_cont$trait[which(BIEN_traits_cont$trait=="leaf nitrogen content per leaf dry mass")] <- "N"
+BIEN_traits_cont$trait[which(BIEN_traits_cont$trait=="leaf phosphorus content per leaf dry mass")] <- "P"
+BIEN_traits_cont$trait[which(BIEN_traits_cont$trait=="leaf photosynthetic rate per leaf area")] <- "LPho"
+BIEN_traits_cont$trait[which(BIEN_traits_cont$trait=="leaf stomatal conductance per leaf area")] <- "LStom"
+BIEN_traits_cont$trait[which(BIEN_traits_cont$trait=="leaf thickness")] <- "LThick"
+BIEN_traits_cont$trait[which(BIEN_traits_cont$trait=="longest whole plant longevity")] <- "Lon"
+BIEN_traits_cont$trait[which(BIEN_traits_cont$trait=="maximum whole plant height")] <- "Height"
+BIEN_traits_cont$trait[which(BIEN_traits_cont$trait=="root dry mass")] <- "RootMass"
+BIEN_traits_cont$trait[which(BIEN_traits_cont$trait=="seed mass")] <- "SeedMass"
+BIEN_traits_cont$trait[which(BIEN_traits_cont$trait=="stem dry mass")] <- "StemMass"
+BIEN_traits_cont$trait[which(BIEN_traits_cont$trait=="stem wood density")] <- "WoodDens"
+
+sort(unique(BIEN_traits_cont$trait))
+
+BIEN_traits_cont$value <- as.numeric(BIEN_traits_cont$value)
+BIEN_traits_cont <- BIEN_traits_cont[-which(is.infinite(BIEN_traits_cont$value)),]
+BIEN_traits_cont <- na.omit(BIEN_traits_cont)
+
+# Categorical traits
+BIEN_GF <- readRDS("Data/BIEN_traits_growthform.RDS")
+colnames(BIEN_GF) <- c("sps", "trait", "value")
+# fix sp names
+BIEN_GF$sps <- gsub(" ","_",BIEN_GF$sps)
+# omit NAs
+BIEN_GF <- na.omit(BIEN_GF)
+BIEN_GF$trait <- "GF"
+
+```
+
+# Load TRY data
+
+We downloaded data for the 9 most complete traits from TRY: 
+
+* Leaf area
+* Leaf area per leaf dry mass
+* Leaf carbon (C) content per leaf dry mass
+* Leaf carbon/nitrogen (C/N) ratio
+* Leaf dry mass (single leaf)
+* Leaf dry mass per leaf fresh mass (leaf dry matter content, LDMC)
+* Leaf fresh mass
+* Leaf nitrogen (N) content per leaf dry mass
+* Leaf nitrogen/phosphorus (N/P) ratio
+* Leaf phosphorus (P) content per leaf dry mass
+* Leaf photosynthesis rate per leaf area
+* Leaf potassium (K) content per leaf dry mass
+* Leaf thickness
+* Leaf transpiration rate per leaf area
+* Leaf water content per leaf dry mass (at saturation)
+* Plant biomass and allometry: Leaf dry mass per plant dry mass (leaf weight ratio, LWR)
+* Plant biomass and allometry: Shoot dry mass (plant aboveground dry mass) per plant
+* Plant biomass and allometry: Whole plant aboveground mass
+* Plant height vegetative
+* Plant lifespan (longevity)
+* Root rooting depth
+* Seed (seedbank) longevity
+* Seed dry mass
+* Seed germination rate (germination efficiency)
+* Stem specific density (SSD) or wood density (stem dry mass per stem fresh volume)
+* Stomata conductance per leaf area
+
+Also downloaded these extra traits for use in analyses of dispersion distance
+* Dispersal syndrome
+* Plant growth form
+* Seed terminal velocity
+
+```{r}
+
+TRY_traits <- fread("C:/TRY_requests/17401_09112021075727/17401.txt", header = T, sep = "\t", quote="")
+
+sppnames <- unique(TRY_traits$AccSpeciesName)
+sppnames <- data.frame(sps = sppnames,
+                       New = sppnames)
+# Remove species from which there is only genus and no species level info
+rem <- sapply(sppnames$New, function(x) length(strsplit(x," ")[[1]])) 
+sppnames <- sppnames[-which(rem==1),]
+# Get only genus and species names, remove subspecies (BIEN's data does not have subspecies, so species level is fine here!)
+sppnames$New <- sapply(sppnames$New, 
+                       function(x){ 
+                         split. <- strsplit(x," ")[[1]]
+                         paste(split.[1],split.[2])}) 
+
+sppnames <- sppnames[-duplicated(sppnames$New),]
+
+# Clean TRY data
+# get columns of interest
+TRY_traits_cont <- TRY_traits[,c(7,11,21)]
+TRY_traits_cat <- TRY_traits[,c(7,11,15)]
+
+colnames(TRY_traits_cont) <- c("sps", "trait", "value")
+colnames(TRY_traits_cat) <- c("sps", "trait", "value")
+
+TRY_traits_cont <- merge(TRY_traits_cont, sppnames,by = "sps", all.x = T)
+TRY_traits_cat <- merge(TRY_traits_cat, sppnames,by = "sps", all.x = T)
+
+TRY_traits_cont$sps <- TRY_traits_cont$New
+TRY_traits_cat$sps <- TRY_traits_cat$New
+
+TRY_traits_cont <- TRY_traits_cont[,c(1:3)]
+TRY_traits_cat <- TRY_traits_cat[,c(1:3)]
+
+TRY_traits_cont <- na.omit(TRY_traits_cont)
+TRY_traits_cat <- na.omit(TRY_traits_cat)
+
+TRY_traits_cont <- TRY_traits_cont[-which(TRY_traits_cont$trait==""),]
+TRY_traits_cat <- TRY_traits_cat[-which(TRY_traits_cat$trait==""),]
+
+# Traits of interest
+interest <- c("Dispersal syndrome", "Plant growth form")
+TRY_traits_cat <- TRY_traits_cat[which(TRY_traits_cat$trait %in% interest),]
+
+TRY_GF <- TRY_traits_cat[which(TRY_traits_cat$trait == "Plant growth form"),]
+TRY_GF$trait <- "GF"
+
+Disp <- TRY_traits_cat[which(TRY_traits_cat$trait == "Dispersal syndrome"),]
+Disp$trait <- "Disp"
+
+rm(TRY_traits,TRY_traits_cat)
+
+```
+
+# Combine trait types
+```{r}
+
+traits_cont <- rbind(TRY_traits_cont, BIEN_traits_cont)
+
+GF <- rbind(BIEN_GF,TRY_GF)
+GF <- na.omit(GF)
+
+rm(TRY_traits_cont, BIEN_traits_cont, BIEN_GF, TRY_GF)
+
+```
+
+## Fix continuous traits
+```{r}
+
+# Leaf area
+posit <- grepl("Leaf area \\(in case of ",traits_cont$trait)
+traits_cont$trait[posit] <- "Leaf area"
+# Fix Leaf area per leaf dry mass
+posit <- grepl("Leaf area per leaf dry mass",traits_cont$trait)
+traits_cont$trait[posit] <- "Leaf area per leaf dry mass"
+
+# Check
+unique(traits_cont$trait)
+length(unique(traits_cont$sps))
+
+traits_cont$value <- as.numeric(traits_cont$value)
+traits_cont <- na.omit(traits_cont)
+
+traits_cont$trait[which(traits_cont$trait=="Leaf area")] <- "LA"
+traits_cont$trait[which(traits_cont$trait=="Leaf area per leaf dry mass")] <- "LADM"
+traits_cont$trait[which(traits_cont$trait=="Leaf carbon (C) content per leaf dry mass")] <- "C"
+traits_cont$trait[which(traits_cont$trait=="Leaf carbon/nitrogen (C/N) ratio")] <- "CN"
+traits_cont$trait[which(traits_cont$trait=="Leaf dry mass (single leaf)")] <- "LDM"
+traits_cont$trait[which(traits_cont$trait=="Leaf dry mass per leaf fresh mass (leaf dry matter content, LDMC)")] <- "LDMC"
+traits_cont$trait[which(traits_cont$trait=="Leaf fresh mass")] <- "LFM"
+traits_cont$trait[which(traits_cont$trait=="Leaf nitrogen (N) content per leaf dry mass")] <- "N"
+traits_cont$trait[which(traits_cont$trait=="Leaf nitrogen/phosphorus (N/P) ratio")] <- "NP"
+traits_cont$trait[which(traits_cont$trait=="Leaf phosphorus (P) content per leaf dry mass")] <- "P"
+traits_cont$trait[which(traits_cont$trait=="Leaf photosynthesis rate per leaf area")] <- "LPho"
+traits_cont$trait[which(traits_cont$trait=="Leaf potassium (K) content per leaf dry mass")] <- "K"
+traits_cont$trait[which(traits_cont$trait=="Leaf thickness")] <- "LThick"
+traits_cont$trait[which(traits_cont$trait=="Leaf transpiration rate per leaf area")] <- "LTransp"
+traits_cont$trait[which(traits_cont$trait=="Leaf water content per leaf dry mass (at saturation)")] <- "LWater"
+traits_cont$trait[which(traits_cont$trait=="Plant biomass and allometry: Leaf dry mass per plant dry mass (leaf weight ratio, LWR)")] <- "LWR"
+traits_cont$trait[which(traits_cont$trait=="Plant biomass and allometry: Shoot dry mass (plant aboveground dry mass) per plant")] <- "ShootDM"
+traits_cont$trait[which(traits_cont$trait=="Plant biomass and allometry: Whole plant aboveground mass")] <- "AbovMass"
+traits_cont$trait[which(traits_cont$trait=="Plant height vegetative")] <- "Height"
+traits_cont$trait[which(traits_cont$trait=="Plant lifespan (longevity)")] <- "Lon"
+traits_cont$trait[which(traits_cont$trait=="Root rooting depth")] <- "RootDepth"
+traits_cont$trait[which(traits_cont$trait=="Seed (seedbank) longevity")] <- "SeedBankLon"
+traits_cont$trait[which(traits_cont$trait=="Seed dry mass")] <- "SeedMass"
+traits_cont$trait[which(traits_cont$trait=="Seed germination rate (germination efficiency)")] <- "SeedGermRate"
+traits_cont$trait[which(traits_cont$trait=="Stem specific density (SSD) or wood density (stem dry mass per stem fresh volume)")] <- "WoodDens"
+traits_cont$trait[which(traits_cont$trait=="Stomata conductance per leaf area")] <- "LStom"
+traits_cont$trait[which(traits_cont$trait=="Seed terminal velocity")] <- "SeedVel"
+
+unique(traits_cont$trait)
+
+```
+
+
+# Resolve species names using TNRS
+Resolve names based on the TAXONOMIC NAME RESOLUTION SERVICE V5.0
+```{r}
+
+Ori <- unique(c(traits_cont$sps,
+                Disp$sps,
+                GF$sps))
+
+# Remove plant names containing 'sp.', 'subsp.', 'subgen.', 'sect.' and 'cf.'
+if(any(grep('sp\\.',Ori))){ Ori <- Ori[-grep('sp\\.',Ori)] }
+if(any(grep('subgen\\.',Ori))){ Ori <- Ori[-grep('subgen\\.',Ori)] }
+if(any(grep('sect\\.',Ori))){ Ori <- Ori[-grep('sect\\.',Ori)] }
+if(any(grep('cf\\.',Ori))){ Ori <- Ori[-grep('cf\\.',Ori)]  }
+
+Ori <- gsub("_"," ",Ori)
+
+length(unique(Ori)) # 146364
+
+# Run in parallel for faster results
+spchunks <- split(Ori, sort(rep_len(1:160, length(Ori))))
+# N species in each chunck
+# head(lapply(spchunks, length))
+
+cl <- makeCluster(detectCores())
+clusterExport(cl, c("spchunks", "TNRS"))
+
+TNRS_names <- pblapply(spchunks, function(i) {
+  test <- TNRS(taxonomic_names = i)
+  while(length(test)==0){ # prevent error
+    test <- TNRS(taxonomic_names = i)
+  }
+  return(test)
+  }
+  , cl = cl
+)
+
+stopCluster(cl)
+# took 10m 30s
+
+head(lapply(TNRS_names, dim))
+
+# check if any chunk fail
+cfail <- sapply(TNRS_names, function(x) {
+  if(length(x)==0){ 1 }
+  else{ 0 }
+})
+# N chunks that fail
+length(which(cfail==1))
+
+TNRS_names <- do.call("rbind", TNRS_names)
+
+# remove species not found
+TNRS_names <- TNRS_names[-which(TNRS_names$Overall_score==""),]
+
+# remove bryophytes
+taxonomy <- BIEN::BIEN_taxonomy_species(gsub("_"," ",TNRS_names$Name_matched))
+length(unique(taxonomy$scrubbed_species_binomial))
+length(unique(TNRS_names$Name_matched))
+taxonomy2 <- taxonomy[-which(duplicated(taxonomy$scrubbed_species_binomial)),]
+TNRS_names_ <- merge(taxonomy2[,c("scrubbed_species_binomial","higher_plant_group")], TNRS_names, 
+                     by.x = "scrubbed_species_binomial", by.y = "Name_matched",
+                     all.x = T)
+# remove bryophytes
+TNRS_names_ <- TNRS_names_[-which(TNRS_names_$higher_plant_group=="bryophytes"),]
+
+my_sp_list <- unique(TNRS_names_$scrubbed_species_binomial)
+length(my_sp_list)
+# N species = 139345
+
+# Fix names
+traits_cont <- merge(traits_cont, 
+                     TNRS_names_[,c("Name_submitted","scrubbed_species_binomial")], 
+                     by.x = "sps", by.y = "Name_submitted",
+                     all.x = T,
+                     allow.cartesian=TRUE) # necessary in this case due to large matrix
+traits_cont$sps <- traits_cont$scrubbed_species_binomial
+traits_cont <- traits_cont[,1:3]
+traits_cont <- na.omit(traits_cont)
+
+GF <- merge(GF, 
+            TNRS_names_[,c("Name_submitted","scrubbed_species_binomial")], 
+            by.x = "sps", by.y = "Name_submitted",
+            all.x = T)
+GF$sps <- GF$scrubbed_species_binomial
+GF <- GF[,1:3]
+GF <- na.omit(GF)
+
+Disp <- merge(Disp, 
+              TNRS_names_[,c("Name_submitted","scrubbed_species_binomial")], 
+              by.x = "sps", by.y = "Name_submitted",
+              all.x = T)
+Disp$sps <- Disp$scrubbed_species_binomial
+Disp <- Disp[,1:3]
+Disp <- na.omit(Disp)
+
+```
+
+# Remove species not in the the sp list
+```{r}
+
+mysplist <- readRDS("R/3_SDM/Cluster/plants_list.RDS")
+
+traits_cont <- traits_cont[which(traits_cont$sps %in% mysplist),]
+GF <- GF[which(GF$sps %in% mysplist),]
+Disp <- Disp[which(Disp$sps %in% mysplist),]
+
+```
+
+
+# Fix traits categorical
+## Growth form
+```{r fix, eval=FALSE, message=FALSE, warning=FALSE}
+
+GF$value[which(grepl("tree",GF$value,ignore.case = T))] <- "Tree"
+GF$value[which(grepl("palm",GF$value,ignore.case = T))] <- "Tree"
+GF$value[which(grepl("pygmy",GF$value,ignore.case = T))] <- "Tree"
+
+GF$value[which(grepl("shrub",GF$value,ignore.case = T))] <- "Shrub"
+GF$value[which(grepl("mallee",GF$value,ignore.case = T))] <- "Shrub"
+GF$value[which(grepl("suffrut",GF$value,ignore.case = T))] <- "Shrub"
+GF$value[which(grepl("Bush",GF$value,ignore.case = T))] <- "Shrub"
+GF$value[which(grepl("shub",GF$value,ignore.case = T))] <- "Shrub"
+GF$value[which(grepl("shurb",GF$value,ignore.case = T))] <- "Shrub"
+GF$value[which(grepl("prostrate",GF$value,ignore.case = T))] <- "Shrub"
+
+GF$value[which(grepl("herb",GF$value,ignore.case = T))] <- "Herb"
+GF$value[which(grepl("hierb",GF$value,ignore.case = T))] <- "Herb"
+GF$value[which(grepl("forb",GF$value,ignore.case = T))] <- "Herb"
+GF$value[which(grepl("hepatic",GF$value,ignore.case = T))] <- "Herb"
+GF$value[which(grepl("herg",GF$value,ignore.case = T))] <- "Herb"
+GF$value[which(grepl("wildflower",GF$value,ignore.case = T))] <- "Herb"
+GF$value[which(grepl("marsh",GF$value,ignore.case = T))] <- "Herb"
+GF$value[which(grepl("crucifer",GF$value,ignore.case = T))] <- "Herb"
+
+GF$value[which(grepl("gras",GF$value,ignore.case = T))] <- "Grass"
+GF$value[which(grepl("bamboo",GF$value,ignore.case = T))] <- "Grass"
+GF$value[which(grepl("sedge",GF$value,ignore.case = T))] <- "Grass"
+GF$value[which(grepl("gramin",GF$value,ignore.case = T))] <- "Grass"
+GF$value[which(grepl("bunchgrass",GF$value,ignore.case = T))] <- "Grass"
+GF$value[which(grepl("tussock",GF$value,ignore.case = T))] <- "Grass"
+GF$value[which(grepl("cyperoid",GF$value,ignore.case = T))] <- "Grass"
+
+GF$value[which(grepl("succul",GF$value,ignore.case = T))] <- "Succulent"
+GF$value[which(grepl("aloe",GF$value,ignore.case = T))] <- "Succulent"
+GF$value[which(grepl("cact",GF$value,ignore.case = T))] <- "Succulent"
+
+  GF$value[which(grepl("creeper",GF$value,ignore.case = T))] <- "Epiphyte"
+GF$value[which(grepl("vine",GF$value,ignore.case = T))] <- "Epiphyte"
+GF$value[which(grepl("epiphy",GF$value,ignore.case = T))] <- "Epiphyte"
+GF$value[which(grepl("climb",GF$value,ignore.case = T))] <- "Epiphyte"
+GF$value[which(grepl("fern",GF$value,ignore.case = T))] <- "Epiphyte"
+GF$value[which(grepl("liana",GF$value,ignore.case = T))] <- "Epiphyte"
+GF$value[which(grepl("lianna",GF$value,ignore.case = T))] <- "Epiphyte"
+GF$value[which(grepl("twin",GF$value,ignore.case = T))] <- "Epiphyte"
+GF$value[which(grepl("scrambler",GF$value,ignore.case = T))] <- "Epiphyte"
+GF$value[which(grepl("trail",GF$value,ignore.case = T))] <- "Epiphyte"
+GF$value[which(grepl("scandent",GF$value,ignore.case = T))] <- "Epiphyte"
+
+GF$value[which(grepl("moss",GF$value,ignore.case = T))] <- "Moss-like"
+GF$value[which(grepl("lycop",GF$value,ignore.case = T))] <- "Moss-like"
+GF$value[which(grepl("cushion",GF$value,ignore.case = T))] <- "Moss-like"
+GF$value[which(grepl("liverwort",GF$value,ignore.case = T))] <- "Moss-like"
+GF$value[which(grepl("brophyte",GF$value,ignore.case = T))] <- "Moss-like"
+GF$value[which(grepl("bryoid",GF$value,ignore.case = T))] <- "Moss-like"
+GF$value[which(grepl("acrocarpous",GF$value,ignore.case = T))] <- "Moss-like"
+GF$value[which(grepl("pleurocarpus",GF$value,ignore.case = T))] <- "Moss-like"
+
+GF$value[which(grepl("brophyte",GF$value,ignore.case = T))] <- "Moss-like"
+GF$value[which(grepl("bryoid",GF$value,ignore.case = T))] <- "Moss-like"
+
+GF$value[which(grepl("Reed",GF$value,ignore.case = T))] <- "Aquatic"
+GF$value[which(grepl("hidro",GF$value,ignore.case = T))] <- "Aquatic"
+GF$value[which(grepl("hydro",GF$value,ignore.case = T))] <- "Aquatic"
+GF$value[which(grepl("aquatic",GF$value,ignore.case = T))] <- "Aquatic"
+GF$value[which(grepl("phaerophyt",GF$value,ignore.case = T))] <- "Aquatic"
+GF$value[which(grepl("Submerge",GF$value,ignore.case = T))] <- "Aquatic"
+GF$value[which(grepl("Emergent",GF$value,ignore.case = T))] <- "Aquatic"
+GF$value[which(grepl("Float",GF$value,ignore.case = T))] <- "Aquatic"
+GF$value[which(grepl("Macrophyte",GF$value,ignore.case = T))] <- "Aquatic"
+
+# View(unique(GF$value))
+
+# remove all GFs not in this list
+cases <- c("Tree", "Palm", "Shrub", "Herb", "Grass", "Succulent", "Epiphyte", "Moss-like", "Aquatic")
+
+GF <- GF[which(GF$value %in% cases),]
+
+# View(unique(GF$value))
+
+# Remove Moss-like
+GF <- GF[-which(GF$value=="Moss-like"),]
+# Remove aquatic
+GF <- GF[-which(GF$value=="Aquatic"),]
+
+# One trait category per sps
+## N obs per trait
+GF_n <- GF %>%
+  group_by(sps, value) %>%
+  summarise(nobs = length(value)) # n obs per value
+
+## Protocol for selecting a single GF value for species classified in multiple categories of GF
+## 1) If n obs is equal among GF values, use priority scheme
+mn = length(cases)
+priority <- 1:mn
+names(priority) <- cases[mn:1]
+## 2) Use the most commonly used GF
+
+## splist with more then 1 GF per sps
+sp.listgo <- GF_n$sps[which(duplicated(GF_n$sps))]
+sp.listgo <- unique(sp.listgo)
+
+# GF with one obs per sps
+GF1 <- GF_n[-which(GF_n$sps %in% sp.listgo),]
+
+# select one GF per sps
+GF2 <- pblapply(sp.listgo, function(x){
+  tmp <- GF_n[which(GF_n$sps == x),]
+  if(dim(tmp)[1]>1){
+    # condition 1
+    if(var(tmp$nobs) == 0){
+      sel <- priority[tmp$value]
+      sel <- order(sel,decreasing = T)[1]
+      tmp <- tmp[sel,]
+    }
+    else{
+      # condition 2
+      sel <- order(tmp$nobs,decreasing = T)[1]
+      tmp <- tmp[sel,]
+    }
+  }
+  return(data.frame(tmp))
+})
+GF2 <- do.call(rbind,GF2)
+
+# Group
+GF <- rbind(GF1, GF2)
+GF <- data.frame(sps = GF$sps, trait = "GF", value = GF$value)
+
+rm(GF1, GF2, BIEN_GF, TRY_GF, GF_n)
+
+```
+
+## Disp
+Following: https://nutnet.org/sites/default/files/Leda_dispersability%20traits.pdf
+```{r}
+
+# View(unique(Disp$value))
+
+# Autochor
+## Autochor: Self dispersal
+## Ballochor: Explosive mechanisms
+## Blastochor: Autonomous placement of seeds or daughter plant away from mother plant
+Disp$value[which(grepl("autochor",Disp$value,ignore.case = T))] <- "Autochor"
+Disp$value[which(grepl("Ballochor",Disp$value,ignore.case = T))] <- "Autochor"
+Disp$value[which(grepl("Blastochor",Disp$value,ignore.case = T))] <- "Autochor"
+Disp$value[which(grepl("drop",Disp$value,ignore.case = T))] <- "Autochor"
+Disp$value[which(grepl("explo",Disp$value,ignore.case = T))] <- "Autochor"
+Disp$value[which(grepl("Barochory",Disp$value,ignore.case = T))] <- "Autochor" # seed drop
+Disp$value[which(grepl("herpochor",Disp$value,ignore.case = T))] <- "Autochor" 
+Disp$value[which(grepl("gravity",Disp$value,ignore.case = T))] <- "Autochor" 
+
+# Chamaechor: Tumbleweeds; dispersal unit rolling over the soil surface caused by wind
+Disp$value[which(grepl("Chamaechor",Disp$value,ignore.case = T))] <- "Chamaechor"
+Disp$value[which(grepl("Tumble",Disp$value,ignore.case = T))] <- "Chamaechor"
+Disp$value[which(grepl("rolling",Disp$value,ignore.case = T))] <- "Chamaechor"
+Disp$value[which(grepl("tumbling",Disp$value,ignore.case = T))] <- "Chamaechor"
+
+# Ombrochor: ‘Raindrop-ballists’: raindrops triggering ballistic seed dispersal 
+Disp$value[which(grepl("Ombrochor",Disp$value,ignore.case = T))] <- "Ombrochor"
+Disp$value[which(grepl("ballis",Disp$value,ignore.case = T))] <- "Ombrochor"
+Disp$value[which(grepl("Rain",Disp$value,ignore.case = T))] <- "Ombrochor"
+
+# Anemochor:  Dispersal by wind (Note: flyers only, no tumbleweeds or wind-ballistics)
+Disp$value[which(grepl("anemocho",Disp$value,ignore.case = T))] <- "Anemochor"
+Disp$value[which(grepl("anemo",Disp$value,ignore.case = T))] <- "Anemochor"
+Disp$value[which(grepl("wind",Disp$value,ignore.case = T))] <- "Anemochor"
+Disp$value[which(grepl("meteorochor",Disp$value,ignore.case = T))] <- "Anemochor"
+Disp$value[which(grepl("wing",Disp$value,ignore.case = T))] <- "Anemochor" # seeds with wings
+Disp$value[which(grepl("unassisted",Disp$value,ignore.case = T))] <- "Anemochor" # seeds with wings
+Disp$value[which(grepl("boleochor",Disp$value,ignore.case = T))] <- "Anemochor"
+Disp$value[which(grepl("fly",Disp$value,ignore.case = T))] <- "Anemochor"
+
+#  Zoochor
+## Dysochor: Dispersal by scatter-hoarding animals
+## Endozoochor: Dispersal after digestion
+## Epizoochor: Adhesive dispersal
+Disp$value[which(grepl("Zoochor",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("Dysochor",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("Endozoochor",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("Epizoochor",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("animal",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("adhesion",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("bird",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("mammal",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("zoo",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("dysochor",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("pig",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("sheep",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("cattle",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("eaten",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("bear",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("monkey",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("ant",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("myrme",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("vertebrate",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("crab",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("crustacea",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("equus",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("capra",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("ruminant",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("cow",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("goat",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("gazell",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("elephant",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("livestock",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("mouse",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("squirrel",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("insect",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("ornitho",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("deer",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("dog",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("boar",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("rabbit",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("Adhesi",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("hooks",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("spine",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("donkey",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("horse",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("bats",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("reptile",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("iguana",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("alligator",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("Macaque",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("turtle",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("Toucans",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("buffalo",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("Mamal",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("Macaca",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("rodent",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("peccary",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("Canis",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("mule",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("sparrow",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("Lizard",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("gorilla",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("chimpanzee",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("beetle",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("invertebrate",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("primate",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("pigeon",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("finche",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("tanager",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("flycatcher",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("cotinga",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("herbivore",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("possum",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("Ursus",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("Canis",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("shrew",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl("Giraffe",Disp$value,ignore.case = T))] <- "Zoochor"
+Disp$value[which(grepl(" bat",Disp$value,ignore.case = T))] <- "Zoochor"
+
+# Hemerochor
+## Agochor: Unintended dispersal by man
+## Ethelocho: Dispersal by trading of plants or seeds
+## Hemerochor: Dispersal by man
+## Speirochor: Dispersal with seeds of agricultural species
+Disp$value[which(grepl("Hemerochor",Disp$value,ignore.case = T))] <- "Hemerochor"
+Disp$value[which(grepl("ethelochor",Disp$value,ignore.case = T))] <- "Hemerochor"
+Disp$value[which(grepl("man",Disp$value,ignore.case = T))] <- "Hemerochor"
+Disp$value[which(grepl("trade",Disp$value,ignore.case = T))] <- "Hemerochor"
+Disp$value[which(grepl("agricul",Disp$value,ignore.case = T))] <- "Hemerochor"
+Disp$value[which(grepl("commerce",Disp$value,ignore.case = T))] <- "Hemerochor"
+Disp$value[which(grepl("clothe",Disp$value,ignore.case = T))] <- "Hemerochor"
+Disp$value[which(grepl("footwear",Disp$value,ignore.case = T))] <- "Hemerochor"
+Disp$value[which(grepl("human",Disp$value,ignore.case = T))] <- "Hemerochor"
+Disp$value[which(grepl("speirochor",Disp$value,ignore.case = T))] <- "Hemerochor"
+Disp$value[which(grepl("agochor",Disp$value,ignore.case = T))] <- "Hemerochor"
+Disp$value[which(grepl("vehicle",Disp$value,ignore.case = T))] <- "Hemerochor"
+Disp$value[which(grepl("contamination",Disp$value,ignore.case = T))] <- "Hemerochor"
+Disp$value[which(grepl("machinery",Disp$value,ignore.case = T))] <- "Hemerochor"
+Disp$value[which(grepl("transport",Disp$value,ignore.case = T))] <- "Hemerochor"
+
+# Nautochor: Dispersal by surface currents of water
+Disp$value[which(grepl("Nautochor",Disp$value,ignore.case = T))] <- "Nautochor"
+Disp$value[which(grepl("Water",Disp$value,ignore.case = T))] <- "Nautochor"
+Disp$value[which(grepl("fish",Disp$value,ignore.case = T))] <- "Nautochor"
+Disp$value[which(grepl("float",Disp$value,ignore.case = T))] <- "Nautochor"
+Disp$value[which(grepl("current",Disp$value,ignore.case = T))] <- "Nautochor"
+Disp$value[which(grepl("hidro",Disp$value,ignore.case = T))] <- "Nautochor"
+Disp$value[which(grepl("hydro",Disp$value,ignore.case = T))] <- "Nautochor"
+Disp$value[which(grepl("bythisochor",Disp$value,ignore.case = T))] <- "Nautochor"
+
+# View(unique(Disp$value))
+
+# remove all GFs not in this list
+cases <- c("Autochor", "Chamaechor", "Ombrochor", "Anemochor", "Zoochor", "Hemerochor", "Nautochor")
+
+Disp <- Disp[which(Disp$value %in% cases),]
+
+Disp <- Disp
+
+# One trait category per sps
+## N obs per trait
+Disp_n <- Disp %>%
+  group_by(sps, value) %>%
+  summarise(nobs = length(value)) # n obs per value
+
+## Protocol for selecting a single Disp value for species classified in multiple categories of Disp
+## 1) If n obs is equal among Disp values, use priority scheme
+mn = length(cases)
+priority <- 1:mn
+names(priority) <- cases[mn:1]
+## 2) Use the most commonly used Disp
+
+## splist with more then 1 Disp per sps
+sp.listgo <- Disp_n$sps[which(duplicated(Disp_n$sps))]
+sp.listgo <- unique(sp.listgo)
+
+# Disp with one obs per sps
+Disp1 <- Disp_n[-which(Disp_n$sps %in% sp.listgo),]
+
+# select one Disp per sps
+Disp2 <- pblapply(sp.listgo, function(x){
+  tmp <- Disp_n[which(Disp_n$sps == x),]
+  if(dim(tmp)[1]>1){
+    # condition 1
+    if(var(tmp$nobs) == 0){
+      sel <- priority[tmp$value]
+      sel <- order(sel,decreasing = T)[1]
+      tmp <- tmp[sel,]
+    }
+    else{
+      # condition 2
+      sel <- order(tmp$nobs,decreasing = T)[1]
+      tmp <- tmp[sel,]
+    }
+  }
+  return(data.frame(tmp))
+})
+Disp2 <- do.call(rbind,Disp2)
+
+# Group
+Disp <- rbind(Disp1, Disp2)
+Disp <- data.frame(sps = Disp$sps, trait = "Disp", value = Disp$value)
+
+# rm(Disp1, Disp2, Disp_n, Disp)
+
+```
+
+# save
+```{r}
+
+traits_cat <- rbind(GF, Disp)
+
+saveRDS(traits_cont, "Data/plants_traits_cont.RDS")
+saveRDS(traits_cat, "Data/plants_traits_cat.RDS")
+
+```
+
+
+
