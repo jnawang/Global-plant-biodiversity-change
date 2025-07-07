@@ -1,0 +1,293 @@
+---
+title: "get_map"
+author: "Junna"
+date: "5/6/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r get ensemble average and select 3 GCMs}
+# the meaning of ensemble average, the average of multiple models.
+# references: CMIP1 evaluation and intercomparison of coupled climate models; Lambert & Boer, 2001
+# ensemble average was recalculated on 10/5/2025, because old data from worldclimate had a big problem. New data was downloaded and used.
+# we found problems with the projection function for ESM images. It is addressed now. 
+library(terra)
+
+ssps  <- c("126", "245", "370", "585")
+times <- c("2021-2040", "2041-2060", "2061-2080", "2081-2100")                  # only care about one time period
+gcms  <- c("ACCESS", "MIROC6", "MPI")
+root  <- "/Users/junnawang/UCDLab/Biodiversity/data/climate/future/"
+#
+template <- terra::rast('/Users/junnawang/UCDLab/Biodiversity/data/climate/bioclimate_land_only/bio1_remove_lakes.tif') 
+crs_moll <- '+proj=moll +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs'
+#
+itime = 4
+issp  = 1
+#
+for (itime in 4:length(times)) {
+  for (issp in 1:length(ssps)) {
+    print(paste0('ssp', ssps[issp]))
+    path.write = paste0(root, times[itime], '/', ssps[issp], '/')
+    path.read  = paste0(path.write, 'wc2.1_5m/')
+    files <- list.files(path.read, full.names = T)
+    nfile <- length(files)
+    r     <- terra::rast(files)     
+    # Okay, I finally see how this works! This is a long list of single layer raster.
+    # Furthermore, some GCM models does not call it bio**, but wc2**
+    # seven climate variables, further simplify the code
+    id <-  c(1, 2, 4, 12, 15, 17, 19)  #   c(10, 11, 16)
+    for (i in id) {
+      series <- seq(from = i, to = nfile*19, by = 19)
+      for (j in series) {
+        print(mean(terra::values(r[[j]]), na.rm=T))
+      }
+      # project to molledue; I have to project first, resample, and then average, 1/2/2025
+      bioc_project <- terra::project(r[[series]], crs_moll)
+      bioc_project <- terra::resample(bioc_project, template)
+      #
+      bioc <- terra::app(bioc_project, mean)
+      # remove inland waters
+      bioc <- terra::mask(bioc, template)
+      # print(plot(bioc))
+      # # project to molledue; project later will miss some land grids, 1/2/2025
+      #
+      # use the correct variable name
+      names(bioc) <- paste0('bio', i, '_ESM_', ssps[issp], '_', times[itime])
+      #
+      writeRaster(bioc, filename = paste0(path.write, 'bio', i, '_ESM_', ssps[issp], '_', times[itime], '.tif'), overwrite=TRUE)
+      print(paste0('Biovar', i))
+    }
+    # I should check if each model bio makes sense before averaging because they may make mistakes!
+    for (igcm in 1:length(gcms)) {
+      file  <- files[grepl(gcms[igcm], files)]
+      r.gcm <- terra::rast(file)
+      r.gcm <- terra::project(r.gcm,  template)
+      if (igcm !=3) {
+        name <- paste0('bio', 1:19, '_', gcms[igcm], '_', ssps[issp], '_', times[itime])
+      } else {
+        name <- paste0('bio', 1:19, '_MPIESM_', ssps[issp], '_', times[itime])
+      }
+      names(r.gcm) <- name
+      #
+      for (i in id) {
+        writeRaster(r.gcm[[i]], filename = paste0(path.write, name[i], '.tif'), overwrite=TRUE)
+      }
+    }
+  }
+}
+
+```
+
+
+```{r deal with projection problem}
+#####this is a testing code to test why 5 min global map cannot project well##########
+#####1/3/2025
+
+library(terra)
+library(raster)
+library(geodata)
+library(here)
+
+GC <- worldclim_global(var = "bio", res = 5, path = here())
+GC
+
+bio1 <- GC$wc2.1_5m_bio_1
+# Russia is there
+plot(bio1)
+
+# Project to Mollwide
+bio1_mol <- terra::project(bio1, "+proj=moll")
+plot(bio1_mol)
+#
+# The new map is correct!
+# files <- list.files('/Users/junnawang/UCDLab/Biodiversity/data/climate/future/2081-2100/585/', pattern='ESM_585_2081-2100.tif', full.names = T)
+files <- list.files('/Users/junnawang/UCDLab/Biodiversity/SDM/preds/bios_fut/', pattern='_ESM_126_2081-2100.tif', full.names = T)
+for (i in 1:10) {
+  print(plot(terra::rast(files[i])))
+}
+#
+problem <- terra::rast('/Users/junnawang/Downloads/bio19_ESM_126_2081-2100_problem.tif')
+right   <- terra::rast(files[1])
+#
+id.problem <- which(!is.na(terra::values(problem)))
+id.right <- which(!is.na(terra::values(right)))
+#
+setdiff(id.right, id.problem)  ##so many missing points 45859
+#
+terra::values(right) <- NA
+terra::values(right)[setdiff(id.right, id.problem)] <- 1
+plot(right)
+# it missed so many points, I have to recalculate it. 
+
+```
+
+
+
+```{r using package to calculate bioclimate variables}
+# this code is only used once; it takes long time to calculate this!
+library(pbapply)
+library(raster)      # they do not support terra!
+library(dismo)
+rm(list=ls())
+#
+dir <- 'C:/Users/jnawang/Box/Biodiversity/data/climate/1901_2022/'
+# monthly min temperature
+ncfname <- 'cru_ts4.07.1901.2022.tmn.dat.nc'
+tmn <- raster::stack(paste0(dir, ncfname))
+
+# monthly max temp
+ncfname <- 'cru_ts4.07.1901.2022.tmx.dat.nc'
+tmx <- stack(paste0(dir, ncfname))
+
+# precipitation
+ncfname <- 'cru_ts4.07.1901.2022.pre.dat.nc'
+pre <- stack(paste0(dir, ncfname))
+
+#
+biovars.year <- list()
+subfolder <- c('his1900', 'cur2000')
+for (i in c(1:20, 71:110)) {
+  print(i)
+  irange  <- ((i-1)*12 + 1):(i*12)
+  biovars.year[[i]] <- dismo::biovars(prec=pre[[irange]], tmin=tmn[[irange]], tmax=tmx[[irange]])
+}
+#
+bio.id <- c(1, 12, 15, 17, 19, 2, 4)
+biovar.his <- stack()
+biovar.cur <- stack()
+for (i in 1:length(bio.id)) {
+  print(i)
+  biovar.tmp <- stack()
+  for (j in 1:20) {
+    biovar.tmp <- addLayer(biovar.tmp, biovars.year[[j]][[bio.id[i]]])
+  }
+  biovar.his <- addLayer(biovar.his, mean(biovar.tmp)) 
+  #
+  biovar.tmp <- stack()
+  for (j in 81:110) {
+    biovar.tmp <- addLayer(biovar.tmp, biovars.year[[j]][[bio.id[i]]])
+  }
+  biovar.cur <- addLayer(biovar.cur, mean(biovar.tmp)) 
+  #
+} 
+#
+names(biovar.his) <- c('bio1', 'bio12', 'bio15', 'bio17', 'bio19', 'bio2', 'bio4')
+names(biovar.cur) <- c('bio1', 'bio12', 'bio15', 'bio17', 'bio19', 'bio2', 'bio4')
+# I want to create the actual maps for all of these. 
+writeRaster(biovar.his, filename=paste0(dir, subfolder[1], '/7biovar_30min.tif'), overwrite=TRUE)
+writeRaster(biovar.cur, filename=paste0(dir, subfolder[2], '/7biovar_30min.tif'), overwrite=TRUE)
+##### finish the calculation
+```
+
+
+```{r using dismo package to get new current climate map 1981-2010}
+library(raster)
+library(dismo)
+# the original wc2.1_cruts4.06_5m_tmin, wc2.1_cruts4.06_5m_tmax, and wc2.1_cruts4.06_5m_prec files are downloaded from worldclim.org
+
+# this will take lots of times 
+dir <- '/Users/junnawang/UCDLab/Biodiversity/data/climate/current/'
+#
+stack.tmax <- stack()
+files.zip  <- list.files(dir, pattern='wc2.1_cruts4.06_5m_tmax', full.names = T)
+for (file in files.zip) {
+  # raster stack
+  stack.tmax <- addLayer(stack.tmax, raster::stack(unzip(file)))  
+}
+print('read tmax done!')
+
+stack.tmin <- stack()
+files.zip  <- list.files(dir, pattern='wc2.1_cruts4.06_5m_tmin', full.names = T)
+for (file in files.zip) {
+  # raster stack
+  stack.tmin <- addLayer(stack.tmin, raster::stack(unzip(file)))  
+}
+print('read tmin done!')
+##
+stack.prec <- stack()
+files.zip  <- list.files(dir, pattern='wc2.1_cruts4.06_5m_prec', full.names = T)
+for (file in files.zip) {
+  # raster stack
+  stack.prec <- addLayer(stack.prec, raster::stack(unzip(file)))  
+}
+print('read prec done!')
+##
+## it takes 10 min for each year's data
+biovars.year <- list()
+for (i in c(1:31)) {
+  print(i)
+  irange  <- ((i-1)*12 + 1):(i*12)
+  biovars.year[[i]] <- dismo::biovars(prec=stack.prec[[irange]], tmin=stack.tmin[[irange]], tmax=stack.tmax[[irange]])
+}
+print('biovar each year done!')
+#
+bio.id <- c(1, 12, 15, 17, 19, 2, 4)
+biovar.cur <- stack()
+biovar.var <- stack()           # calculate interannual variations of these biovars
+for (i in 1:length(bio.id)) {
+  print(i)
+  biovar.tmp <- stack()
+  for (j in 1:31) {
+    biovar.tmp <- addLayer(biovar.tmp, biovars.year[[j]][[bio.id[i]]])
+  }
+  biovar.cur <- addLayer(biovar.cur, calc(biovar.tmp, fun=mean)) 
+  biovar.var <- addLayer(biovar.var, calc(biovar.tmp, fun=sd))
+  #
+} 
+print('biovar multiple year mean and sd done!')
+#
+# TODO: double-check if the calculation is right, comparing with online near current climate maps. 
+#
+# convert to mollel and 5 min
+template   <- raster::raster('/Users/junnawang/UCDLab/Biodiversity/SDM/preds/bios_pres/bio1.tif')
+biovar.cur <- projectRaster(biovar.cur, crs=crs(template))
+biovar.cur <- raster::resample(biovar.cur, template)
+#
+biovar.var <- projectRaster(biovar.var, crs=crs(template))
+biovar.var <- raster::resample(biovar.var, template)
+#
+names <- c('bio1', 'bio12', 'bio15', 'bio17', 'bio19', 'bio2', 'bio4')
+names(biovar.cur) <- names
+names(biovar.var) <- names
+# I want to create the actual maps for all of these. 
+for (i in 1:length(names)) {
+  writeRaster(biovar.cur[[i]], filename=paste0(dir, names[i], '.tif'), overwrite=TRUE)
+  writeRaster(biovar.var[[i]], filename=paste0(dir, 'inter_annual_variance_', names[i], '.tif'), overwrite=TRUE)
+}
+##
+
+```
+
+
+```{r calculate climate change and relative change}
+library(terra)
+#
+names <- c('bio1', 'bio12', 'bio15', 'bio17', 'bio19', 'bio2', 'bio4')
+bio_future_ESM_245 <- terra::rast(paste0("/Users/junnawang/UCDLab/Biodiversity/data/climate/future/2081-2100/245/", names, "_ESM_245_2081-2100.tif"))
+#
+bio_current <- terra::rast(paste0("/Users/junnawang/UCDLab/Biodiversity/data/climate/current/", names, ".tif"))
+#
+bio_current_sd <- terra::rast(paste0("/Users/junnawang/UCDLab/Biodiversity/data/climate/current/inter_annual_variance_", names, ".tif"))
+#
+climate_change <- rast()
+climate_change_relative <- rast()
+#
+for (i in 1:length(names)) {
+  climate_change <- c(climate_change, bio_future_ESM_245[[i]] - bio_current[[i]])
+  climate_change_relative <- c(climate_change_relative, (bio_future_ESM_245[[i]] - bio_current[[i]]) / (bio_current_sd[[i]]))
+}
+#
+plot(climate_change[[7]])
+plot(climate_change_relative[[7]])     # , range=c(-5, 5)
+plot(bio_current_sd[[7]])  #, range=c(0,1)
+# the above analysis shows that 
+writeRaster(climate_change, "/Users/junnawang/UCDLab/Biodiversity/data/climate/future_climate_change/biovar_change.tif", overwrite=TRUE)
+#
+
+```
+

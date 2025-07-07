@@ -1,0 +1,201 @@
+---
+title: "extinction"
+output: pdf_document
+date: "2024-12-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Calculate extinction rates
+```{r extinction rates}
+####Reproducible code####
+value_MAXE <- read.csv('/Users/junnawang/UCDLab/Biodiversity/Results/2024/Range_area_change/area_shrink_merged_MAXE.csv')
+
+value_RFDS <- read.csv('/Users/junnawang/UCDLab/Biodiversity/Results/2024/Range_area_change/area_shrink_merged_RFDS.csv')
+
+value_MAXE_RFDS <- read.csv('/Users/junnawang/UCDLab/Biodiversity/Results/2024/Range_area_change/area_shrink_merged_MAXE_RFDS.csv')
+
+area_shrink <- value_MAXE_RFDS
+####
+scenarios <- 5:8     ##
+####
+thresholds <- c(1.0, 0.9, 0.8, 0.5, 0.3)
+####
+extinction_scenarios <- data.frame(scenario=c("SSP126", "SSP245", "SSP370", "SSP585"))
+for (scenario in scenarios) {
+  for (i in 1:length(thresholds)) {
+    extinction_scenarios[scenario-4, 1 + (i-1)*3 + 1] <- sum(area_shrink[, 2 + scenario] <= 1.0 - thresholds[i]) / nrow(area_shrink) * 100
+    extinction_scenarios[scenario-4, 1 + (i-1)*3 + 2] <- sum(area_shrink[, 2 + scenario + 16*4] <= 1.0 - thresholds[i]) / nrow(area_shrink) * 100
+    extinction_scenarios[scenario-4, 1 + (i-1)*3 + 3] <- sum(area_shrink[, 2 + scenario + 16] <= 1.0 - thresholds[i]) / nrow(area_shrink) * 100
+  }
+  # expanding species: realized > same; dispersal limitation: realized == suitable
+  extinction_scenarios[scenario-4, 17] <- sum(area_shrink[, 2 + scenario + 16*4] > area_shrink[, 2 + scenario + 16] & area_shrink[, 2 + scenario + 16*4] == area_shrink[, 2 + scenario]) / nrow(area_shrink) * 100  
+  # expanding species: realized > same; dispersal limitation: realized < suitable
+  extinction_scenarios[scenario-4, 18] <- sum(area_shrink[, 2 + scenario + 16*4] > area_shrink[, 2 + scenario + 16] & area_shrink[, 2 + scenario + 16*4] < area_shrink[, 2 + scenario]) / nrow(area_shrink) * 100
+  # contracting species: realized == same
+  extinction_scenarios[scenario-4, 19] <- sum(area_shrink[, 2 + scenario + 16*4] == area_shrink[, 2 + scenario + 16]) / nrow(area_shrink) * 100
+}
+####
+names(extinction_scenarios) <- c('scenario', 'extinction no dispersal limitation', 'extinction with dispersal limitation', 'extinction no dispersal', 
+                                 '>90% range loss no dispersal limitation', '>90% range loss with dispersal limitation', '>90% range loss no dispersal',
+                                 '>80% range loss no dispersal limitation',	'>80% range loss with dispersal limitation', '>80% range loss no dispersal',
+                                 '>50% range loss no dispersal limitation',	'>50% range loss with dispersal limitation', '>50% range loss no dispersal',
+                                 '>30% range loss no dispersal limitation',	'>30% range loss with dispersal limitation', '>30% range loss no dispersal',
+                                 'expanding species no dispersal limitation', 'expanding species dispersal limitation', 'contracting species')
+####
+write.csv(extinction_scenarios, 'extinction_scenarios_MAXE_RFDS.csv', row.names = FALSE)
+####
+
+#### use another way of calculating species extinction
+extinction_scenarios_100km2 <- data.frame(scenario=c("SSP126", "SSP245", "SSP370", "SSP585"))
+for (scenario in scenarios) {
+    extinction_scenarios_100km2[scenario-4, 2] <- sum(area_shrink[, 2 + scenario] <= 0.1 & area_shrink[, 2 + scenario] * area_shrink[, 2] < 1e8) / nrow(area_shrink) * 100
+    extinction_scenarios_100km2[scenario-4, 3] <- sum(area_shrink[, 2 + scenario + 16*4] <= 0.1 & area_shrink[, 2 + scenario + 16*4] * area_shrink[, 2] < 1e8) / nrow(area_shrink) * 100
+    extinction_scenarios_100km2[scenario-4, 4] <- sum(area_shrink[, 2 + scenario + 16] <= 0.1 & area_shrink[, 2 + scenario + 16] * area_shrink[, 2] < 1e8) / nrow(area_shrink) * 100
+}
+
+names(extinction_scenarios_100km2) <- c('scenario', 'extinction no dispersal limitation', 'extinction with dispersal limitation', 'extinction no dispersal') 
+write.csv(extinction_scenarios_100km2, 'extinction_scenarios_area_threshold_MAXE_RFDS.csv', row.names = FALSE)
+
+
+##the following sectioins should be updated with new results. 
+####write extinction composition
+extinction_composition <- data.frame(scenario=c("SSP126", "SSP245", "SSP370", "SSP585"))
+
+# values from get_extinction_habitat_loss_map.R; MAXE_RFDS
+extinction_composition[1, 2:4] <- c(3720, 841, 400) / 4961 *100
+extinction_composition[2, 2:4] <- c(4717, 1194, 478) / 6389 *100
+extinction_composition[3, 2:4] <- c(5959, 1802, 756) / 8517 *100
+extinction_composition[4, 2:4] <- c(6978, 2452, 1014) / 10444 *100
+#
+names(extinction_composition)[2:4] <- c('contracting range', 'shifting range with dispersal limitation', 'shifting range without dispersal limitation')
+#
+write.csv(extinction_composition, 'extinction_composition_MAXE_RFDS.csv', row.names = FALSE)
+####
+
+# MAXE
+extinction_composition[1, 2:4] <- c(3224, 495, 206) / 3224 *100
+extinction_composition[2, 2:4] <- c(3420, 824, 305) / 4549 *100
+extinction_composition[3, 2:4] <- c(4478, 1347, 498) / 6323 *100
+extinction_composition[4, 2:4] <- c(5480, 1965, 692) / 8137 *100
+write.csv(extinction_composition, 'extinction_composition_MAXE.csv', row.names = FALSE)
+
+# RFDS
+extinction_composition[1, 2:4] <- c(4803, 2487, 1437) / 8727 *100
+extinction_composition[2, 2:4] <- c(5986, 3075, 1761) / 10822 *100
+extinction_composition[3, 2:4] <- c(7509, 4254, 2205) / 13968 *100
+extinction_composition[4, 2:4] <- c(8604, 5388, 2581) / 16573 *100
+write.csv(extinction_composition, 'extinction_composition_RFDS.csv', row.names = FALSE)
+
+```
+
+
+```{r calculate extinction rate following Thomas 2004 paper}
+#
+area_shrink <- value_MAXE_RFDS
+#
+scenarios <- 5:8
+####
+extinction_thomas <- data.frame(scenario=c("SSP126", "SSP245", "SSP370", "SSP585"))
+##
+z = 0.25
+#
+# deal with MAXE result first
+# method 1
+for (scenario in scenarios) {
+  extinction_thomas[scenario-4, 2] <- 1.0 - (sum(pmin(area_shrink[, 2+scenario], 1.0) * area_shrink[, 2]) / sum(area_shrink[, 2]))^z
+  extinction_thomas[scenario-4, 3] <- 1.0 - (sum(pmin(area_shrink[, 2+scenario+16*4], 1.0) * area_shrink[, 2]) / sum(area_shrink[, 2]))^z
+  extinction_thomas[scenario-4, 4] <- 1.0 - (sum(pmin(area_shrink[, 2+scenario+16], 1.0) * area_shrink[, 2]) / sum(area_shrink[, 2]))^z
+  # method 2
+  extinction_thomas[scenario-4, 5] <- 1.0 - mean(pmin(area_shrink[, 2+scenario], 1.0), na.rm=T)^z
+  extinction_thomas[scenario-4, 6] <- 1.0 - mean(pmin(area_shrink[, 2+scenario+16*4], 1.0), na.rm=T)^z
+  extinction_thomas[scenario-4, 7] <- 1.0 - mean(pmin(area_shrink[, 2+scenario+16], 1.0), na.rm=T)^z
+  # method 3
+  extinction_thomas[scenario-4, 8]  <- mean(1.0-(pmin(area_shrink[, 2+scenario], 1.0))^z, na.rm=T)
+  extinction_thomas[scenario-4, 9]  <- mean(1.0-(pmin(area_shrink[, 2+scenario+16*4], 1.0))^z, na.rm=T)
+  extinction_thomas[scenario-4, 10] <- mean(1.0-(pmin(area_shrink[, 2+scenario+16], 1.0))^z, na.rm=T)
+}
+#
+names(extinction_thomas)[2:10] <- c('method1 no dispersal limitation', 'method1 with dispersal limitation', 'method1 no dispersal', 'method2 no dispersal limitation', 'method2 with dispersal limitation', 'method2 no dispersal', 'method3 no dispersal limitation', 'method3 with dispersal limitation', 'method3 no dispersal')
+#
+write.csv(extinction_thomas, 'extinction_thomas_MAXE_RFDS.csv', row.names = FALSE)
+
+```
+
+
+
+```{r factor contribution}
+value_MAXE <- read.csv('/Users/junnawang/UCDLab/Biodiversity/Results/2024/Range_area_change/area_shrink_merged_MAXE.csv')
+
+value_RFDS <- read.csv('/Users/junnawang/UCDLab/Biodiversity/Results/2024/Range_area_change/area_shrink_merged_RFDS.csv')
+
+value_MAXE_RFDS <- read.csv('/Users/junnawang/UCDLab/Biodiversity/Results/2024/Range_area_change/area_shrink_merged_MAXE_RFDS.csv')
+
+extinction <- data.frame(SDM=c(rep('MAXE', 96), rep('RFDS', 96), rep('MAXE_RFDS', 96)), 
+                         ESM=rep(rep(c('ACCESS', 'ESM', 'MIROC6', 'MPIESM'), each=4), 18), 
+                         CO2=rep(c('ssp126', 'ssp245', 'ssp370', 'ssp585'), 72) , 
+                         migration=rep(rep(c('full', 'no', 'fast', 'slow', 'med', 'uni'), each=16), 3))
+# 
+extinct_rate_MAXE <- apply(value_MAXE[, 3:98], 2, function(x) {sum(x < 0.1) / nrow(value_MAXE) })   # 
+extinct_rate_MAXE
+extinct_rate_RFDS <- apply(value_RFDS[, 3:98], 2, function(x) {sum(x < 0.1) / nrow(value_RFDS) })
+extinct_rate_RFDS
+extinct_rate_MAXE_RFDS <- apply(value_MAXE_RFDS[, 3:98], 2, function(x) {sum(x < 0.1) / nrow(value_MAXE_RFDS) })
+extinct_rate_MAXE_RFDS
+#
+extinction$val <- c(as.numeric(extinct_rate_MAXE), as.numeric(extinct_rate_RFDS), as.numeric(extinct_rate_MAXE_RFDS))
+#
+model <- aov(val ~ SDM + ESM + CO2 + migration, data=extinction[c(1:288),] )  # extinction[c(33:80, 113:160),]
+summary(model)
+# check this method: Analysis of Variance
+#
+#              Df Sum Sq Mean Sq F value  Pr(>F)    
+# SDM           2 0.5929 0.29645 2286.17 < 2e-16 ***
+# ESM           3 0.0775 0.02584  199.25 < 2e-16 ***
+# CO2           3 0.3064 0.10213  787.60 < 2e-16 ***
+# migration     5 0.0095 0.00191   14.71 8.8e-13 ***
+# Residuals   274 0.0355 0.00013                   
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+# migration < ESM < CO2 < SDM
+# Migration has very little impact on species extinction rates. 
+
+# how to get the full range of extinction projection?
+library(ggplot2)
+ggplot(data=extinction, aes(x=CO2, y=val)) +
+  geom_boxplot() +
+  geom_point(aes(col=SDM))
+
+# the whole range of extinction rates
+mean(extinction$val)   # 0.1231616
+sd(extinction$val)     # 0.05966999
+range(extinction$val)  # 0.03304564 ~ 0.31999291; this is the full range of extinction rates; this range is pretty similar to 
+
+
+# if only use realistic migration velocity
+mean(extinction$val[extinction$migration %in% c('fast', 'slow', 'med') & extinction$SDM == 'MAXE_RFDS'])  # 0.1226356; 0.1076773
+sd(extinction$val[extinction$migration %in% c('fast', 'slow', 'med') & extinction$SDM == 'MAXE_RFDS'])    # 0.05878029; 0.03272795
+
+# the ensemble scenario
+range(extinction$val[extinction$migration %in% c('fast', 'slow', 'med') & extinction$SDM == 'MAXE_RFDS' & extinction$ESM == "ESM"])  
+# 0.0727270 0.1584151
+range(extinction$val[extinction$migration %in% c('med') & extinction$SDM == 'MAXE_RFDS' & extinction$ESM == "ESM"])  
+# 0.07331816 0.15435091
+
+
+
+```
+
+
+```{r overlaps of extinction species by the two methods}
+extinction_id_maxe <- which(value_MAXE[, 2 + scenario + 16*4] < 0.1)
+extinction_id_rfds <- which(value_RFDS[, 2 + scenario + 16*4] < 0.1)
+
+length(intersect(extinction_id_maxe, extinction_id_rfds))  # 68% ~ 34%
+
+```
+
+
