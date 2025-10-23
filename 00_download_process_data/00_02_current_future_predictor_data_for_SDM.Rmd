@@ -59,26 +59,97 @@ elev_heter <- resample(elev_heter, example, method = 'bilinear', filename='C:/Us
 
 ```
 
+## Soil
+Soild variables from SoilGrids:
+1. Depth to bedrock
+2. pH
+3. Clay proportion
+4. Silt proportion
+5. Bulk density
 
-```{r process soil maps, projection and resample}
-library(terra)
-rm(list=ls())
-#
-template <- terra::rast('/Users/junnawang/UCDLab/Biodiversity/data/climate/bioclimate_land_only/bio1_remove_lakes.tif')
-template <- terra::rast('/Users/junnawang/UCDLab/Biodiversity/SDM/preds/bios_pres/bio1.tif')
-crs_moll <- "+proj=moll +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs"
-#
-depthB <- terra::rast("/Users/junnawang/UCDLab/Biodiversity/data/soil/BulkDensity/bulk_avg.tif")
-depthB_aggregate <- terra::aggregate(depthB, fact=4, fun="mean")
-# plot(depthB)
-depthB_moll <- terra::project(depthB_aggregate, crs_moll)
-depthB_moll
-#
-depthB_moll_5m <- terra::resample(depthB_moll, template)
-plot(depthB_moll_5m)
-#
-# this process is not used, because of many holes in the map. 
-#
+All soil variables were downloaded using Soildgrids 2.0 from the ftp server using the [geodata] package. Soildgrids 2.0 were way to large for downloading. There is no much difference between dataset at the resolution used here. Data on depth to bed rock is only available from Soilgrids version 1.0.
+All soil variables were downloaded at a 2.5km resolution
+Soils variables were included as it has been shown that climate change analyses that do not incorporate soils variability can misrepresent edaphic specialists (Corlett and Tomlinson 2020).
+
+This map collection is described in the [META_GEOTIFF_1B.csv](https://files.isric.org/soilgrids/former/2017-03-10/data/META_GEOTIFF_1B.csv) spreadsheet.
+Data is also downloadable from https://data.isric.org/
+
+```{r soil}
+
+if(!dir.exists("R/3_SDM/predictors/soil")){
+  dir.create("R/3_SDM/predictors/soil")
+}
+
+# Soil data downloaded 09/28/21 using the ftp server
+
+depths <- c(5, 15, 30, 60)    # the soil data is the average of the top 1 meter. 
+
+cl <- makeCluster(length(depths))
+clusterExport(cl, c("depths","soil_world","climatelayers"))
+ 
+pblapply(depths,function(x){
+  
+  # 1. pH 
+  soil_world(var = "phh2o", depth = x, stat="mean",
+             path = "R/3_SDM/predictors/soil")
+  # 2. Clay proportion 
+  soil_world(var = "clay", depth = x, stat="mean",
+             path = "R/3_SDM/predictors/soil")
+  # 3. Silt proportion 
+  soil_world(var = "silt", depth = x, stat="mean",
+             path = "R/3_SDM/predictors/soil")
+  # 4. Bulk density
+  soil_world(var = "bdod", depth = x, stat="mean",
+             path = "R/3_SDM/predictors/soil")
+},
+cl = cl)
+
+stopCluster(cl)
+
+# Download Depth to bedrock. Only available from soildGids 1.0
+# Depth to bedrock
+depthB <- "https://files.isric.org/soilgrids/former/2017-03-10/aggregated/5km/BDRICM_M_5km_ll.tif"
+depthB <- raster(depthB)
+depthB <- resample(depthB, raster(climatelayers[[1]]))
+writeRaster(depthB, "R/3_SDM/predictors/depthB.tif",format = "GTiff", overwrite=TRUE)
+
+##########################3
+# 1) get average soil layers across the 4 depth measurements
+# 2) resample to 5 arc min (~10km)
+# 3) write raster
+
+# pH
+pH <- list.files("R/3_SDM/predictors/soil",pattern = "phh2o", full.names = T)
+pH <- raster::stack(lapply(pH, raster::raster))
+pH <- raster::calc(pH, fun = mean, na.rm = T)
+pH <- raster::resample(pH, raster::raster(climatelayers[[1]]))
+raster::writeRaster(pH, paste0("R/3_SDM/predictors/phh2o_avg.tif"), 
+                    format = "GTiff")
+
+# clay
+clay <- list.files("R/3_SDM/predictors/soil",pattern = "clay", full.names = T)
+clay <- raster::stack(lapply(clay, raster::raster))
+clay <- raster::calc(clay, fun = mean, na.rm = T)
+clay <- raster::resample(clay, raster::raster(climatelayers[[1]]))
+raster::writeRaster(clay, paste0("R/3_SDM/predictors/clay_avg.tif"), 
+                    format = "GTiff")
+
+# silt
+silt <- list.files("R/3_SDM/predictors/soil",pattern = "silt", full.names = T)
+silt <- raster::stack(lapply(silt, raster::raster))
+silt <- raster::calc(silt, fun = mean, na.rm = T)
+silt <- raster::resample(silt, raster::raster(climatelayers[[1]]))
+raster::writeRaster(silt, paste0("R/3_SDM/predictors/silt_avg.tif"), 
+                    format = "GTiff")
+
+# bulk
+bulk <- list.files("R/3_SDM/predictors/soil",pattern = "bdod", full.names = T)
+bulk <- raster::stack(lapply(bulk, raster::raster))
+bulk <- raster::calc(bulk, fun = mean, na.rm = T)
+bulk <- raster::resample(bulk, raster::raster(climatelayers[[1]]))
+raster::writeRaster(bulk, paste0("R/3_SDM/predictors/bulk_avg.tif"), 
+                    format = "GTiff")
+
 ```
 
 
@@ -317,7 +388,7 @@ for (itime in 4:length(times)) {
 ```
 
 
-```{r get sampling bias map}
+```{r try to download occurrence data}
 # bias map = species occurence record within a cell
 # we assume that all the species we model is  a target group.
 
@@ -332,14 +403,6 @@ BIEN_occurrence_records_per_species(species = NULL)
 
 
 # the way he calcuates richness is really fast!
-
-```
-
-
-```{r try to download occurrence data}
-library(BIEN)
-#BIEN_occurrence_records_per_species(species = NULL) 
-BIEN_occurrence_species("Abies amabilis")
 
 ```
 
@@ -416,6 +479,7 @@ library(dismo)
 rm(list=ls())
 #
 dir <- 'C:/Users/jnawang/Box/Biodiversity/data/climate/1901_2022/'
+# these nc files are very big (~3G), user can download from https://crudata.uea.ac.uk/cru/data/hrg/cru_ts_4.07/
 # monthly min temperature
 ncfname <- 'cru_ts4.07.1901.2022.tmn.dat.nc'
 tmn <- raster::stack(paste0(dir, ncfname))
