@@ -1,13 +1,13 @@
-This folder contains R scripts used to predict global plant biodiversity redistribution and extinction risks under future (2081-2100) climate change using a series of methods. Below I document the objectives and sub-folder structure of this project. The number in sub-folder names generally indicate dependency relationships.
+This repository contains R scripts used to predict global plant biodiversity redistribution and extinction risks under future climate conditions (2081–2100) using a series of modeling methods. Below, we describe the project’s objectives and the structure of its scripts. The numbers in folder and file names generally indicate their dependency order.
 
-# Obectivies
+# Objectives
 
 -   Model the current and future suitable habitat distributions for \~ 68000 plant species under climate change.
 -   Estimate species-specific range shift velocities to delineate their realized future species ranges.
 -   Estimate plant species extinction rates and the effects of range shifts on extinction.
 -   Identify global patterns of change in local plant species richness.
 
-# Folder Structure
+# Folder/Script Structure
 
 -   00_download_process_data
     -   00_01_process_species_ocurrence_data
@@ -38,6 +38,6 @@ This folder contains R scripts used to predict global plant biodiversity redistr
 
 -   Steps 04-06 use the outputs from the previous steps. So we only provide key results files to Zenodo needed to reproduce our analyses, including data on species range size changes and richness changes under all modeled scenarios.
 
-# Important note
+# Notes
 
 Some of these scripts are designed to run on a computing cluster. Please make minor adjustments if you plan to run them on a personal computer.
