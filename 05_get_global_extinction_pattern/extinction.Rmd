@@ -163,39 +163,5 @@ summary(model)
 # migration < ESM < CO2 < SDM
 # Migration has very little impact on species extinction rates. 
 
-# how to get the full range of extinction projection?
-library(ggplot2)
-ggplot(data=extinction, aes(x=CO2, y=val)) +
-  geom_boxplot() +
-  geom_point(aes(col=SDM))
-
-# the whole range of extinction rates
-mean(extinction$val)   # 0.1231616
-sd(extinction$val)     # 0.05966999
-range(extinction$val)  # 0.03304564 ~ 0.31999291; this is the full range of extinction rates; this range is pretty similar to 
-
-
-# if only use realistic migration velocity
-mean(extinction$val[extinction$migration %in% c('fast', 'slow', 'med') & extinction$SDM == 'MAXE_RFDS'])  # 0.1226356; 0.1076773
-sd(extinction$val[extinction$migration %in% c('fast', 'slow', 'med') & extinction$SDM == 'MAXE_RFDS'])    # 0.05878029; 0.03272795
-
-# the ensemble scenario
-range(extinction$val[extinction$migration %in% c('fast', 'slow', 'med') & extinction$SDM == 'MAXE_RFDS' & extinction$ESM == "ESM"])  
-# 0.0727270 0.1584151
-range(extinction$val[extinction$migration %in% c('med') & extinction$SDM == 'MAXE_RFDS' & extinction$ESM == "ESM"])  
-# 0.07331816 0.15435091
-
-
-
 ```
-
-
-```{r overlaps of extinction species by the two methods}
-extinction_id_maxe <- which(value_MAXE[, 2 + scenario + 16*4] < 0.1)
-extinction_id_rfds <- which(value_RFDS[, 2 + scenario + 16*4] < 0.1)
-
-length(intersect(extinction_id_maxe, extinction_id_rfds))  # 68% ~ 34%
-
-```
-
 

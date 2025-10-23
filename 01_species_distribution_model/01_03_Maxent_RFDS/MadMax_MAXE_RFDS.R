@@ -155,6 +155,7 @@ MadMax <- function(occ, spname, fit.vars, proj.vars, proj.names, output_dir = "R
     print(CBI_maxe)
     ###########
     #######################################################RUN Random Forest second#############################################
+    # use the variables already selected by VSURF when running RFDS models, because this step is time consuming. 
     if (file.exists(paste0("../SDM2024RFDS/",output_dir,"/stats/",spname,"_stats.csv"))) {
       stats     <- read.csv(paste0("../SDM2024RFDS/",output_dir,"/stats/",spname,"_stats.csv"))
       ivarselec <- which(names(fit.vars) %in% stats$sps[3:nrow(stats)])

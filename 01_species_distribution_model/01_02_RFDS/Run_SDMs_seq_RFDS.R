@@ -1,18 +1,6 @@
 rm(list=ls())
 gc()
 
-# Run SDMs 
-
-# This runs SDMs species by species (sequencial)
-
-# force the cluster to identify the correct path to libraries
-#.libPaths("/home/jnawang/R/x86_64-pc-linux-gnu-library")
-#libs <- .libPaths()
-
-#if(!'dismo' %in% installed.packages()[,"Package"]){
-#  install.packages('dismo', repos='https://rspatial.r-universe.dev')
-#}
-
 ########################
 # Setup
 list.of.packages <- c("raster", "terra", "blockCV", "enmSdmX", "randomForest", "VSURF",
@@ -46,30 +34,6 @@ sps.current <- read.csv('../SDM2024MAXE/Current_species.csv')
 sptogo <- sps.current[spset, 1]
 #
 
-# get occurrences for species in chunk i
-# drv <- dbDriver("SQLite") 
-# my_db_file <- "plant_occur.sqlite"
-# db <- dbConnect(drv, my_db_file)
-# 
-# # the sqlite only stores location information of each species
-# mydata <- dbGetQuery(
-#   db, 
-#   paste0(
-#     "SELECT * ",
-#     "FROM occur ",
-#     "WHERE sps in (", paste(shQuote(sptogo, type = "sh"),collapse = ', '), ")")
-# )
-# 
-# DBI::dbDisconnect(db)
-# 
-# # project coords to mollweide
-# # convert matrix to a SpatialPoints object
-# pts.moll <- sp::SpatialPoints(mydata[,1:2], 
-#                               proj4string = CRS("+proj=longlat"))
-# # convert to a mollweide
-# pts.moll <- sp::spTransform(pts.moll, CRSobj = "+proj=moll")
-# pts.moll <- data.frame(pts.moll)
-#
 # load current occ
 occ_cur <- readRDS('../SDM2024MAXE/sp_occr_1960-2020.Rds')            # 1960-2020
 occ_cur <- occ_cur %>% filter(sps==sptogo)

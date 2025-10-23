@@ -2,11 +2,8 @@ rm(list=ls())
 gc()
 
 ########################
-# Setup
-list.of.packages <- c("raster", "terra", "blockCV", "enmSdmX", "randomForest",
-                      "SDMtune","dismo",
-                      "tidyverse",
-                      "foreach","doParallel","pbapply","doFuture","future","doRNG")
+list.of.packages <- c("raster", "terra", "blockCV", "enmSdmX", "randomForest", "VSURF",
+                      "SDMtune", "dismo", "tidyverse", "parallel")
 
 new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
 
@@ -16,7 +13,7 @@ sapply(list.of.packages, require, character.only = TRUE)
 
 ########################
 # Source code
-source("MadMax_predict_ESM.R")
+source("MadMax_history_vsurf.R")
 
 ########################
 # Args
@@ -27,18 +24,28 @@ spset <- as.numeric(command_args[1])
 # Load occurrences
 
 ## species to model
-# The csv is species name and its occurrence
-sps.current <- read.csv('Current_species.csv')
-sptogo <- sps.current[spset, 1]
-#
+# The RDS is just the name of these species
+sps.history <- read.csv('History_species_1880-1920.csv')
+sptogo <- sps.history[spset, 1]
+# sptogo <- readRDS("sptorun.RDS")[spset]
 
+
+print(Sys.time())
+
+############################################################################################
 # load current occ
-occ_cur <- readRDS('sp_occr_1960-2020.Rds')            # 1960-2020
+occ_cur <- readRDS('sp_occr_1960-2020.RDS')            # 1960-2020
 occ_cur <- occ_cur %>% filter(sps==sptogo)
 pts.moll <- occ_cur[, 2:3]
-#
-########################
+
+
+# load historic occ
+occ_his <- readRDS('sp_occr_1880-1920.RDS')
+occ_his <- occ_his %>% filter(sps==sptogo)
+occ_his <- occ_his[, 2:3]
+############################################################################################
 # load predictors
+
 # soil and aridity
 asoil <- list.files("preds/soil", pattern = ".tif$", full.names = T)
 asoil <- terra::rast(asoil)
@@ -51,43 +58,43 @@ bios_pres <- c(bios_pres,asoil)
 
 # projections variables to the future
 # we choose ensemble average of 16 scenarios
-gcms  <- c("ESM", "ACCESS", "MIROC6", "MPIESM")
-ssps  <- c(126, 245, 370, 585)
-# times <- c("2021-2040", "2041-2060", "2061-2080", "2081-2100")
-times <- c("2081-2100")
-futvars <- expand.grid(gcms, ssps, times)
-futvars$go <- paste(futvars[,1],futvars[,2],futvars[,3],sep="_")
+gcms  <- c("1900")
+futvars <- data.frame(go=gcms)
 
 bios_fut <- list()
 for(i in 1:length(futvars$go)){
   bios_fut. <- list.files("preds/bios_fut", 
-                          pattern = paste0('_', futvars$go[i],".tif$"), 
+                          pattern = paste0(futvars$go[i],".tif$"), 
                           full.names = T)
   bios_fut. <- terra::rast(bios_fut.)
   # fix names
   mypattern <- paste0("_",futvars$go[i])
   mypattern <- gsub("-",".",mypattern)
   names(bios_fut.) <- gsub(mypattern,"",names(bios_fut.))
+  names(bios_fut.) <- c("bio1", "bio12", "bio15", "bio17", "bio19", "bio2", "bio4", "build", "crop", "moisture")
   bios_fut. <- c(bios_fut.,asoil)
-  
   bios_fut[[i]] <- bios_fut.
 }
 names(bios_fut) <- futvars$go
 rm(asoil)
+
 
 ########################
 # Run SDM
 
 cat("\nRunning model for", sptogo,"\n")
 
+#### Using doFuture
 
 m <-try({
   
-  MadMax(spname = sptogo,
+  MadMax_history(spname = sptogo,
          occ = pts.moll,
-         fit.vars = bios_pres,
-         proj.vars = bios_fut, # list with predictors for future scenarios
-         proj.names = futvars$go, # vector names for proj.vars in the same order as proj.vars
+         occ.his = occ_his, 
+         method = 'BRT',              # 'Maxent', "ANN", "BRT", "RF_dsamp"
+         fit.vars = bios_pres,      
+         proj.vars = bios_fut,        # list with predictors for future scenarios
+         proj.names = futvars$go,     # vector names for proj.vars in the same order as proj.vars
          output_dir = "Results",
          check = F)
   
@@ -104,3 +111,5 @@ if(class(m) == "try-error"){
   
   print(m)
 }
+
+print(Sys.time())

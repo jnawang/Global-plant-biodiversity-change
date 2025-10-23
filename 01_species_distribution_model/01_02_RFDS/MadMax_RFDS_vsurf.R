@@ -209,39 +209,22 @@ MadMax <- function(occ, spname, fit.vars, proj.vars, proj.names, output_dir = "R
     print(vi)
     #  
     ################calculate the threshold, using the same method from SDMtune, Junna 2/22/2025. 
-    browser()
-    data <- test
+    # browser()
+    data <- sdmdata
     n_p <- sum(data@pa == 1)
     n_a <- sum(data@pa == 0)
+    #
     pred <- predict(rf_downsample, data@data[,ivarselec], type = "prob")[,2]
     p_pred <- pred[1:n_p]
     a_pred <- pred[(n_p + 1):(n_p + n_a)]    
     #
-    th <- sort(unique(pred))
-    th <- c(0, th, 1)
-    #
-    tp <- fp <- vector(mode = "numeric", length = length(th))
-    #
-    for (i in seq_along(th)) {
-      tp[i] <- sum(p_pred >= th[i])
-      fp[i] <- sum(a_pred >= th[i])
-    }
-    #
-    fn <- n_p - tp
-    tn <- n_a - fp
-    # maximize tp and tn
-    tpr_test <- tp / (tp + fn)         # the first row of confusion matrix
-    tnr_test <- tn / (fp + tn)         # the second row of confusion matrix
-    th_ess <- th[which.min(abs(tpr_test - tnr_test))]
-    th_mss <- th[which.max(tpr_test + tnr_test)]
-    if (is.numeric(th_ess) && length(th_ess) == 0) {
-      th_ess <- 0.5
-    }
-    if (is.numeric(th_mss) && length(th_mss) == 0) {
-      th_mss <- 0.5
-    }    
-    thr <- data.frame(th=c("Equal test sensitivity and specificity", "Maximum test sensitivity plus specificity"), 
-                      val=c(th_ess, th_mss))
+    e <- evaluate(p=p_pred, a=a_pred)
+    thr <- threshold(e, sensitivity=0.95)
+    thr <- pmax(thr, 0.05)        # the lower limit of occurrence probability is 0.05. 
+    th_mss <- as.numeric(thr[2])
+    th_noomit <- as.numeric(thr[3])
+    th_ess <- as.numeric(thr[5])
+    th_95s <- as.numeric(thr[6])
     ######################################################the end of calculating thresholds#############################################
     #    
     # Predict the current distribution
@@ -309,7 +292,7 @@ MadMax <- function(occ, spname, fit.vars, proj.vars, proj.names, output_dir = "R
      paste0(output_dir, "/LogOutPres/",spname,".tif"), overwrite=TRUE)
     # range
     terra::writeRaster(
-      sdm_pred_pres >= th_mss,
+      sdm_pred_pres >= th_95s,
       paste0(output_dir,"/RangePres/",spname,".tif"), overwrite=TRUE)
 
     # occurrence
@@ -327,7 +310,7 @@ MadMax <- function(occ, spname, fit.vars, proj.vars, proj.names, output_dir = "R
        paste0(output_dir,"/",proj.names[x],"/LogOutFut/",spname,".tif"), overwrite=TRUE)
       # range future
       terra::writeRaster(
-        sdm_pred_fut[[x]] >= th_mss,
+        sdm_pred_fut[[x]] >= th_95s,
         paste0(output_dir,"/",proj.names[x],"/RangeFut/",spname,".tif"), overwrite=TRUE)
     }
     )
