@@ -34,7 +34,7 @@ This repository contains R scripts used to predict global plant biodiversity red
 
 # Associated input data
 
--   Steps 00-03 require input data, which have been uploaded to Zenodo (DOI: 10.5281/zenodo.17427092).
+-   Steps 00-03 require input data, which have been uploaded to Zenodo (DOI: 10.5281/zenodo.17427091).
 
 -   Steps 04-06 use the outputs from the previous steps. So we only provide key results files to Zenodo needed to reproduce our analyses, including data on species range size changes and richness changes under all modeled scenarios.
 
