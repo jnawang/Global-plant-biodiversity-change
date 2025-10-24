@@ -459,13 +459,6 @@ nb.points = 10000,
 plot = FALSE,
 method = "kendall"
 )
-# other possible method: pearson, spearman, kendall
-# If
-# your variables are skewed or have outliers (e.g. when working with precipitation
-# variables) you should favour the Spearman or Kendall methods.
-
-# through this analysis, I decide to choose 7 bioclimate variables.
-# bio1, bio2, bio4; bio12, bio15, bio17, bio19; and save the new variables
 
 ```
 
